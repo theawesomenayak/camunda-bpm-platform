@@ -494,17 +494,10 @@ alter table ACT_RU_INCIDENT
     foreign key (JOB_DEF_ID_)
     references ACT_RU_JOBDEF (ID_);
 
-alter table ACT_RU_AUTHORIZATION
-    add constraint ACT_UNIQ_AUTH_USER
-    unique (TYPE_,USER_ID_,RESOURCE_TYPE_,RESOURCE_ID_);
-
-alter table ACT_RU_AUTHORIZATION
-    add constraint ACT_UNIQ_AUTH_GROUP
-    unique (TYPE_,GROUP_ID_,RESOURCE_TYPE_,RESOURCE_ID_);
-
-alter table ACT_RU_VARIABLE
-    add constraint ACT_UNIQ_VARIABLE
-    unique (VAR_SCOPE_, NAME_);
+-- create CRDB uniqueness constraints with index syntax since they must be dropped as indexes
+create unique index ACT_UNIQ_AUTH_USER on ACT_RU_AUTHORIZATION(TYPE_,USER_ID_,RESOURCE_TYPE_,RESOURCE_ID_);
+create unique index ACT_UNIQ_AUTH_GROUP on ACT_RU_AUTHORIZATION(TYPE_,GROUP_ID_,RESOURCE_TYPE_,RESOURCE_ID_);
+create unique index ACT_UNIQ_VARIABLE on ACT_RU_VARIABLE(VAR_SCOPE_, NAME_);
 
 alter table ACT_RU_EXT_TASK
     add constraint ACT_FK_EXT_TASK_EXE

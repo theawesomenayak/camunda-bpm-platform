@@ -82,13 +82,9 @@ alter table ACT_ID_MEMBERSHIP
     foreign key (USER_ID_)
     references ACT_ID_USER (ID_);
 
-alter table ACT_ID_TENANT_MEMBER
-    add constraint ACT_UNIQ_TENANT_MEMB_USER
-    unique (TENANT_ID_, USER_ID_);
-
-alter table ACT_ID_TENANT_MEMBER
-    add constraint ACT_UNIQ_TENANT_MEMB_GROUP
-    unique (TENANT_ID_, GROUP_ID_);
+-- create CRDB uniqueness constraints with index syntax since they must be dropped as indexes
+create unique index ACT_UNIQ_TENANT_MEMB_USER on ACT_ID_TENANT_MEMBER(TENANT_ID_, USER_ID_);
+create unique index ACT_UNIQ_TENANT_MEMB_GROUP on ACT_ID_TENANT_MEMBER(TENANT_ID_, GROUP_ID_);
 
 create index ACT_IDX_TENANT_MEMB on ACT_ID_TENANT_MEMBER(TENANT_ID_);
 alter table ACT_ID_TENANT_MEMBER
