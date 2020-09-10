@@ -16,6 +16,7 @@
  */
 package org.camunda.bpm.engine.impl.db.entitymanager.operation;
 
+import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.impl.db.DbEntity;
 import org.camunda.bpm.engine.impl.db.entitymanager.Recyclable;
 
@@ -33,7 +34,7 @@ public abstract class DbOperation implements Recyclable {
   protected DbOperationType operationType;
 
   protected int rowsAffected;
-  protected Exception failure;
+  protected ProcessEngineException failure;
   protected State state;
 
   /**
@@ -85,11 +86,11 @@ public abstract class DbOperation implements Recyclable {
     this.state = state;
   }
 
-  public Exception getFailure() {
+  public ProcessEngineException getFailure() {
     return failure;
   }
 
-  public void setFailure(Exception failure) {
+  public void setFailure(ProcessEngineException failure) {
     this.failure = failure;
   }
 

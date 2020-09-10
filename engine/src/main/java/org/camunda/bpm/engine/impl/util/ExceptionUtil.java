@@ -21,6 +21,7 @@ import java.io.StringWriter;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import org.apache.ibatis.executor.BatchExecutorException;
 import org.camunda.bpm.engine.ProcessEngineException;
@@ -212,4 +213,19 @@ public class ExceptionUtil {
 
     return message;
   }
+
+  public static <T> T throwPersistenceException(Supplier<T> supplier) {
+    try {
+      return supplier.get();
+
+    } catch (Exception ex) {
+      throw wrapPersistenceException(ex);
+
+    }
+  }
+
+  public static ProcessEngineException wrapPersistenceException(Exception ex) {
+    return new ProcessEngineException("Persistence Exception", ex);
+  }
+
 }

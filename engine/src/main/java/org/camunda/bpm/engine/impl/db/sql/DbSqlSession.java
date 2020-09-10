@@ -36,8 +36,11 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.ibatis.executor.BatchResult;
+import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.mapping.MappedStatement;
+import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSession;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.camunda.bpm.engine.ProcessEngine;
 import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.context.Context;
@@ -76,45 +79,47 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
 
   public DbSqlSession(DbSqlSessionFactory dbSqlSessionFactory) {
     this.dbSqlSessionFactory = dbSqlSessionFactory;
-    this.sqlSession = dbSqlSessionFactory
-      .getSqlSessionFactory()
-      .openSession();
+    SqlSessionFactory sqlSessionFactory = dbSqlSessionFactory.getSqlSessionFactory();
+    this.sqlSession = ExceptionUtil.throwPersistenceException(sqlSessionFactory::openSession);
   }
 
   public DbSqlSession(DbSqlSessionFactory dbSqlSessionFactory, Connection connection, String catalog, String schema) {
     this.dbSqlSessionFactory = dbSqlSessionFactory;
-    this.sqlSession = dbSqlSessionFactory
-      .getSqlSessionFactory()
-      .openSession(connection);
+    SqlSessionFactory sqlSessionFactory = dbSqlSessionFactory.getSqlSessionFactory();
+    this.sqlSession = ExceptionUtil.throwPersistenceException(() -> sqlSessionFactory.openSession(connection));
     this.connectionMetadataDefaultCatalog = catalog;
     this.connectionMetadataDefaultSchema = schema;
   }
 
   // select ////////////////////////////////////////////
 
-  public List<?> selectList(String statement, Object parameter){
+  public List<?> selectList(String statement, Object parameter) {
     statement = dbSqlSessionFactory.mapStatement(statement);
-    List<Object> resultList = sqlSession.selectList(statement, parameter);
+    List<Object> resultList = executeSelectList(statement, parameter);
     for (Object object : resultList) {
       fireEntityLoaded(object);
     }
     return resultList;
   }
 
+  public List<Object> executeSelectList(String statement, Object parameter) {
+    return ExceptionUtil.throwPersistenceException(() -> sqlSession.selectList(statement, parameter));
+  }
+
   @SuppressWarnings("unchecked")
   public <T extends DbEntity> T selectById(Class<T> type, String id) {
     String selectStatement = dbSqlSessionFactory.getSelectStatement(type);
-    selectStatement = dbSqlSessionFactory.mapStatement(selectStatement);
+    String mappedDelectStatement = dbSqlSessionFactory.mapStatement(selectStatement);
     ensureNotNull("no select statement for " + type + " in the ibatis mapping files", "selectStatement", selectStatement);
 
-    Object result = sqlSession.selectOne(selectStatement, id);
+    Object result = ExceptionUtil.throwPersistenceException(() -> sqlSession.selectOne(mappedDelectStatement, id));
     fireEntityLoaded(result);
     return (T) result;
   }
 
   public Object selectOne(String statement, Object parameter) {
-    statement = dbSqlSessionFactory.mapStatement(statement);
-    Object result = sqlSession.selectOne(statement, parameter);
+    String mappedStatement = dbSqlSessionFactory.mapStatement(statement);
+    Object result = ExceptionUtil.throwPersistenceException(() -> sqlSession.selectOne(mappedStatement, parameter));
     fireEntityLoaded(result);
     return result;
   }
@@ -133,10 +138,11 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
 
   protected abstract void executeSelectForUpdate(String statement, Object parameter);
 
-  protected void entityUpdatePerformed(DbEntityOperation operation, int rowsAffected, Exception failure) {
+  protected void entityUpdatePerformed(DbEntityOperation operation,
+                                       int rowsAffected,
+                                       Exception failure) {
     if (failure != null) {
       operation.setRowsAffected(0);
-      operation.setFailure(failure);
 
       if (isConcurrentModificationException(operation, failure)) {
         operation.setState(State.FAILED_CONCURRENT_MODIFICATION);
@@ -162,20 +168,25 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
     }
   }
 
-  protected void bulkUpdatePerformed(DbBulkOperation operation, int rowsAffected, Exception failure) {
+  protected void bulkUpdatePerformed(DbBulkOperation operation,
+                                     int rowsAffected,
+                                     Exception failure) {
 
     bulkOperationPerformed(operation, rowsAffected, failure);
   }
 
-  protected void bulkDeletePerformed(DbBulkOperation operation, int rowsAffected, Exception failure) {
+  protected void bulkDeletePerformed(DbBulkOperation operation,
+                                     int rowsAffected,
+                                     Exception failure) {
 
     bulkOperationPerformed(operation, rowsAffected, failure);
   }
 
-  protected void bulkOperationPerformed(DbBulkOperation operation, int rowsAffected, Exception failure) {
+  protected void bulkOperationPerformed(DbBulkOperation operation,
+                                        int rowsAffected,
+                                        Exception failure) {
 
     if (failure != null) {
-      operation.setFailure(failure);
       operation.setState(State.FAILED_ERROR);
     } else {
       operation.setRowsAffected(rowsAffected);
@@ -183,11 +194,12 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
     }
   }
 
-  protected void entityDeletePerformed(DbEntityOperation operation, int rowsAffected, Exception failure) {
+  protected void entityDeletePerformed(DbEntityOperation operation,
+                                       int rowsAffected,
+                                       Exception failure) {
     
     if (failure != null) {
       operation.setRowsAffected(0);
-      operation.setFailure(failure);
 
       DbOperation dependencyOperation = operation.getDependentOperation();
 
@@ -214,7 +226,8 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
     }
   }
 
-  protected boolean isConcurrentModificationException(DbOperation failedOperation, Throwable cause) {
+  protected boolean isConcurrentModificationException(DbOperation failedOperation,
+                                                      Exception cause) {
 
     boolean isConstraintViolation = ExceptionUtil.checkForeignKeyConstraintViolation(cause);
     boolean isVariableIntegrityViolation = ExceptionUtil.checkVariableIntegrityViolation(cause);
@@ -261,15 +274,16 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
 
   protected void executeInsertEntity(String insertStatement, Object parameter) {
     LOG.executeDatabaseOperation("INSERT", parameter);
-    sqlSession.insert(insertStatement, parameter);
+    ExceptionUtil.throwPersistenceException(() -> sqlSession.insert(insertStatement, parameter));
   }
 
-  protected void entityInsertPerformed(DbEntityOperation operation, int rowsAffected, Exception failure) {
+  protected void entityInsertPerformed(DbEntityOperation operation,
+                                       int rowsAffected,
+                                       Exception failure) {
     DbEntity entity = operation.getEntity();
 
     if (failure != null) {
       operation.setRowsAffected(0);
-      operation.setFailure(failure);
 
       if (isConcurrentModificationException(operation, failure)) {
         operation.setState(State.FAILED_CONCURRENT_MODIFICATION);
@@ -291,27 +305,39 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
 
   protected int executeDelete(String deleteStatement, Object parameter) {
     // map the statement
-    deleteStatement = dbSqlSessionFactory.mapStatement(deleteStatement);
-    return sqlSession.delete(deleteStatement, parameter);
+    String mappedDeleteStatement = dbSqlSessionFactory.mapStatement(deleteStatement);
+    return ExceptionUtil.throwPersistenceException(() -> sqlSession.delete(mappedDeleteStatement, parameter));
   }
 
   // update ////////////////////////////////////////
 
   public int executeUpdate(String updateStatement, Object parameter) {
-    updateStatement = dbSqlSessionFactory.mapStatement(updateStatement);
-    return sqlSession.update(updateStatement, parameter);
+    String mappedUpdateStatement = dbSqlSessionFactory.mapStatement(updateStatement);
+    return ExceptionUtil.throwPersistenceException(() -> update(mappedUpdateStatement, parameter));
+  }
+
+  public int update(String updateStatement, Object parameter) {
+    return ExceptionUtil.throwPersistenceException(() -> sqlSession.update(updateStatement, parameter));
   }
 
   @Override
   public int executeNonEmptyUpdateStmt(String updateStmt, Object parameter) {
-    updateStmt = dbSqlSessionFactory.mapStatement(updateStmt);
+    String mappedUpdateStmt = dbSqlSessionFactory.mapStatement(updateStmt);
 
     //if mapped statement is empty, which can happens for some databases, we have no need to execute it
-    MappedStatement mappedStatement = sqlSession.getConfiguration().getMappedStatement(updateStmt);
-    if (mappedStatement.getBoundSql(parameter).getSql().isEmpty())
-      return 0;
+    boolean isMappedStmtEmpty = ExceptionUtil.throwPersistenceException(() -> {
+      Configuration configuration = sqlSession.getConfiguration();
+      MappedStatement mappedStatement = configuration.getMappedStatement(mappedUpdateStmt);
+      BoundSql boundSql = mappedStatement.getBoundSql(parameter);
+      String sql = boundSql.getSql();
+      return sql.isEmpty();
+    });
 
-    return sqlSession.update(updateStmt, parameter);
+    if (isMappedStmtEmpty) {
+      return 0;
+    }
+
+    return update(mappedUpdateStmt, parameter);
   }
 
   // flush ////////////////////////////////////////////////////////////////////
@@ -320,23 +346,39 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
   }
 
   public void flushOperations() {
-    flushBatchOperations();
+    ExceptionUtil.throwPersistenceException(this::flushBatchOperations);
   }
 
   public List<BatchResult> flushBatchOperations() {
-    return sqlSession.flushStatements();
+    try {
+      return sqlSession.flushStatements();
+
+    } catch (RuntimeException ex) {
+      // exception is wrapped later
+      throw ex;
+
+    }
   }
 
   public void close() {
-    sqlSession.close();
+    ExceptionUtil.throwPersistenceException(() -> {
+      sqlSession.close();
+      return null;
+    });
   }
 
   public void commit() {
-    sqlSession.commit();
+    ExceptionUtil.throwPersistenceException(() -> {
+      sqlSession.commit();
+      return null;
+    });
   }
 
   public void rollback() {
-    sqlSession.rollback();
+    ExceptionUtil.throwPersistenceException(() -> {
+      sqlSession.rollback();
+      return null;
+    });
   }
 
   // schema operations ////////////////////////////////////////////////////////
@@ -385,7 +427,7 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
   @Override
   protected String getDbVersion() {
     String selectSchemaVersionStatement = dbSqlSessionFactory.mapStatement("selectDbSchemaVersion");
-    return (String) sqlSession.selectOne(selectSchemaVersionStatement);
+    return ExceptionUtil.throwPersistenceException(() -> sqlSession.selectOne(selectSchemaVersionStatement));
   }
 
   @Override
@@ -502,7 +544,7 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
     tableName = prependDatabaseTablePrefix(tableName);
     Connection connection = null;
     try {
-      connection = sqlSession.getConnection();
+      connection = ExceptionUtil.throwPersistenceException(() -> sqlSession.getConnection());
       DatabaseMetaData databaseMetaData = connection.getMetaData();
       ResultSet tables = null;
 
@@ -674,7 +716,7 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
     String sqlStatement = null;
     String exceptionSqlStatement = null;
     try {
-      Connection connection = sqlSession.getConnection();
+      Connection connection = ExceptionUtil.throwPersistenceException(() -> sqlSession.getConnection());
       Exception exception = null;
       byte[] bytes = IoUtil.readInputStream(inputStream, resourceName);
       String ddlStatements = new String(bytes);
@@ -692,8 +734,8 @@ public abstract class DbSqlSession extends AbstractPersistenceSession {
 
           if (line.endsWith(";")) {
             sqlStatement = addSqlStatementPiece(sqlStatement, line.substring(0, line.length()-1));
-            Statement jdbcStatement = connection.createStatement();
             try {
+              Statement jdbcStatement = connection.createStatement();
               // no logging needed as the connection will log it
               logLines.add(sqlStatement);
               jdbcStatement.execute(sqlStatement);

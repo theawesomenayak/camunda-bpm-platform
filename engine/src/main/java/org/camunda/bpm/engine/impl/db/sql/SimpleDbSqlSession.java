@@ -23,12 +23,12 @@ import java.util.Collections;
 import java.util.List;
 
 import org.apache.ibatis.session.ExecutorType;
+import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.impl.db.DbEntity;
 import org.camunda.bpm.engine.impl.db.FlushResult;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbBulkOperation;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbEntityOperation;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbOperation;
-import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbOperation.State;
 
 /**
  * For mybatis {@link ExecutorType#SIMPLE}
@@ -47,7 +47,7 @@ public class SimpleDbSqlSession extends DbSqlSession {
 
   @Override
   protected void executeSelectForUpdate(String statement, Object parameter) {
-    sqlSession.update(statement, parameter);
+    update(statement, parameter);
   }
 
   @Override
@@ -84,7 +84,8 @@ public class SimpleDbSqlSession extends DbSqlSession {
     try {
       executeInsertEntity(insertStatement, dbEntity);
       entityInsertPerformed(operation, 1, null);
-    } catch (Exception e) {
+    } catch (ProcessEngineException e) {
+      operation.setFailure(e);
       entityInsertPerformed(operation, 0, e);
     }
   }
@@ -105,7 +106,8 @@ public class SimpleDbSqlSession extends DbSqlSession {
     try {
       int nrOfRowsDeleted = executeDelete(deleteStatement, dbEntity);
       entityDeletePerformed(operation, nrOfRowsDeleted, null);
-    } catch (Exception e) {
+    } catch (ProcessEngineException e) {
+      operation.setFailure(e);
       entityDeletePerformed(operation, 0, e);
     }
   }
@@ -120,7 +122,8 @@ public class SimpleDbSqlSession extends DbSqlSession {
     try {
       int rowsAffected = executeDelete(statement, parameter);
       bulkDeletePerformed(operation, rowsAffected, null);
-    } catch (Exception e) {
+    } catch (ProcessEngineException e) {
+      operation.setFailure(e);
       bulkDeletePerformed(operation, 0, e);
     }
   }
@@ -140,7 +143,8 @@ public class SimpleDbSqlSession extends DbSqlSession {
     try {
       int rowsAffected = executeUpdate(updateStatement, dbEntity);
       entityUpdatePerformed(operation, rowsAffected, null);
-    } catch (Exception e) {
+    } catch (ProcessEngineException e) {
+      operation.setFailure(e);
       entityUpdatePerformed(operation, 0, e);
     }
   }
@@ -155,7 +159,8 @@ public class SimpleDbSqlSession extends DbSqlSession {
     try {
       int rowsAffected = executeUpdate(statement, parameter);
       bulkUpdatePerformed(operation, rowsAffected, null);
-    } catch (Exception e) {
+    } catch (ProcessEngineException e) {
+      operation.setFailure(e);
       bulkUpdatePerformed(operation, 0, e);
     }
   }

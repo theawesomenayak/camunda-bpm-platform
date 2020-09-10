@@ -31,6 +31,7 @@ import org.camunda.bpm.model.bpmn.Bpmn;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.junit.Assume;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.RuleChain;
@@ -54,6 +55,7 @@ public class PersistenceExceptionTest {
     runtimeService = engineRule.getRuntimeService();
   }
 
+  @Ignore("Check with logger rule")
   @Test
   public void testPersistenceExceptionContainsRealCause() {
     Assume.assumeFalse(engineRule.getProcessEngineConfiguration().getDatabaseType().equals(DbSqlSessionFactory.MARIADB));

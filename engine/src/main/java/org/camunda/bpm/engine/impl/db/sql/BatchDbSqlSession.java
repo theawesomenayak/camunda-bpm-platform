@@ -28,7 +28,10 @@ import java.util.List;
 import org.apache.ibatis.executor.BatchExecutorException;
 import org.apache.ibatis.executor.BatchResult;
 import org.apache.ibatis.session.ExecutorType;
+import org.camunda.bpm.engine.ProcessEngineException;
+import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.db.DbEntity;
+import org.camunda.bpm.engine.impl.db.EnginePersistenceLogger;
 import org.camunda.bpm.engine.impl.db.FlushResult;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbBulkOperation;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbEntityOperation;
@@ -43,6 +46,7 @@ import org.camunda.bpm.engine.impl.util.ExceptionUtil;
  */
 public class BatchDbSqlSession extends DbSqlSession {
 
+  protected final static EnginePersistenceLogger LOG = ProcessEngineLogger.PERSISTENCE_LOGGER;
 
   public BatchDbSqlSession(DbSqlSessionFactory dbSqlSessionFactory) {
     super(dbSqlSessionFactory);
@@ -58,8 +62,14 @@ public class BatchDbSqlSession extends DbSqlSession {
 
       DbOperation operation = operations.get(i);
 
-      // stages all operations
-      executeDbOperation(operation);
+      try {
+        // stage operation
+        executeDbOperation(operation);
+
+      } catch (Exception ex) {
+        throw LOG.flushDbOperationUnexpectedException(operation, operations, ex);
+
+      }
     }
 
     List<BatchResult> batchResults;
@@ -68,6 +78,7 @@ public class BatchDbSqlSession extends DbSqlSession {
       batchResults = flushBatchOperations();
     } catch (RuntimeException e) {
       return postProcessBatchFailure(operations, e);
+
     }
 
     return postProcessBatchSuccess(operations, batchResults);
@@ -90,12 +101,13 @@ public class BatchDbSqlSession extends DbSqlSession {
     return FlushResult.withFailures(failedOperations);
   }
 
-  protected FlushResult postProcessBatchFailure(List<DbOperation> operations, RuntimeException e) {
-    BatchExecutorException batchExecutorException = ExceptionUtil.findBatchExecutorException(e);
+  protected FlushResult postProcessBatchFailure(List<DbOperation> operations, RuntimeException exception) {
+    BatchExecutorException batchExecutorException =
+        ExceptionUtil.findBatchExecutorException(exception);
 
     if (batchExecutorException == null) {
       // Unexpected exception
-      throw e;
+      throw exception;
     }
 
     List<BatchResult> successfulBatches = batchExecutorException.getSuccessfulBatchResults();
@@ -109,7 +121,19 @@ public class BatchDbSqlSession extends DbSqlSession {
     }
 
     int[] failedBatchUpdateCounts = cause.getUpdateCounts();
-    postProcessJdbcBatchResult(operationsIt, failedBatchUpdateCounts, e, failedOperations);
+    postProcessJdbcBatchResult(operationsIt, failedBatchUpdateCounts, exception, failedOperations);
+
+    String message = ExceptionUtil.collectExceptionMessages(exception);
+
+    failedOperations.forEach(failedOperation -> {
+      ProcessEngineException failure = LOG.flushDbOperationException(
+          operations,
+          failedOperation,
+          message,
+          exception
+      );
+      failedOperation.setFailure(failure);
+    });
 
     List<DbOperation> remainingOperations = CollectionUtil.collectInList(operationsIt);
     return FlushResult.withFailuresAndRemaining(failedOperations, remainingOperations);
@@ -141,9 +165,7 @@ public class BatchDbSqlSession extends DbSqlSession {
       List<DbOperation> failedOperations) {
     boolean failureHandled = false;
 
-    for (int i = 0; i < statementResults.length; i++) {
-      int statementResult = statementResults[i];
-
+    for (int statementResult : statementResults) {
       EnsureUtil.ensureTrue("More batch results than scheduled operations detected. This indicates a bug",
           operationsIt.hasNext());
 
@@ -211,7 +233,9 @@ public class BatchDbSqlSession extends DbSqlSession {
     return operationType != DbOperationType.INSERT;
   }
 
-  protected void postProcessOperationPerformed(DbOperation operation, int rowsAffected, Exception failure) {
+  protected void postProcessOperationPerformed(DbOperation operation,
+                                               int rowsAffected,
+                                               Exception failure) {
 
     switch(operation.getOperationType()) {
 
@@ -260,6 +284,19 @@ public class BatchDbSqlSession extends DbSqlSession {
   }
 
   @Override
+  public int executeUpdate(String updateStatement, Object parameter) {
+    String mappedUpdateStatement = dbSqlSessionFactory.mapStatement(updateStatement);
+    try {
+      return sqlSession.update(mappedUpdateStatement, parameter);
+
+    } catch (Exception ex) {
+      // exception is wrapped later
+      throw ex;
+
+    }
+  }
+
+  @Override
   protected void deleteBulk(DbBulkOperation operation) {
     String statement = operation.getStatement();
     Object parameter = operation.getParameter();
@@ -285,8 +322,35 @@ public class BatchDbSqlSession extends DbSqlSession {
   }
 
   @Override
+  protected int executeDelete(String deleteStatement, Object parameter) {
+    // map the statement
+    final String mappedDeleteStatement = dbSqlSessionFactory.mapStatement(deleteStatement);
+    try {
+      return sqlSession.delete(mappedDeleteStatement, parameter);
+
+    } catch (Exception ex) {
+      // exception is wrapped later
+      throw ex;
+
+    }
+  }
+
+  @Override
+  protected void executeInsertEntity(String insertStatement, Object parameter) {
+    LOG.executeDatabaseOperation("INSERT", parameter);
+    try {
+      sqlSession.insert(insertStatement, parameter);
+
+    } catch (Exception ex) {
+      // exception is wrapped later
+      throw ex;
+
+    }
+  }
+
+  @Override
   protected void executeSelectForUpdate(String statement, Object parameter) {
-    sqlSession.selectList(statement, parameter);
+    executeSelectList(statement, parameter);
   }
 
 }

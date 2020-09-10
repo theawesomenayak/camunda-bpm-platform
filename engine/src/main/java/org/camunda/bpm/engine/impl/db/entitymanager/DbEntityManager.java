@@ -319,7 +319,7 @@ public class DbEntityManager implements Session, EntityLoadListener {
     try {
       final List<List<DbOperation>> batches = CollectionUtil.partition(operationsToFlush, BATCH_SIZE);
       for (List<DbOperation> batch : batches) {
-        flushDbOperations(batch, operationsToFlush);
+        flushDbOperations(batch);
       }
     } finally {
       if (isIgnoreForeignKeysForNextFlush) {
@@ -330,15 +330,17 @@ public class DbEntityManager implements Session, EntityLoadListener {
     }
   }
 
-  protected void flushDbOperations(List<DbOperation> operationsToFlush, List<DbOperation> allOperations) {
+  protected void flushDbOperations(List<DbOperation> operationsToFlush) {
 
     // execute the flush
     while (!operationsToFlush.isEmpty()) {
       FlushResult flushResult;
       try {
         flushResult = persistenceSession.executeDbOperations(operationsToFlush);
-      } catch (Exception e) {
-        throw LOG.flushDbOperationsException(allOperations, e);
+      } catch (ProcessEngineException e) {
+        // Top level persistence exception
+        throw e;
+
       }
 
       List<DbOperation> failedOperations = flushResult.getFailedOperations();
@@ -352,7 +354,9 @@ public class DbEntityManager implements Session, EntityLoadListener {
           handleConcurrentModification(failedOperation);
         }
         else if (failureState == State.FAILED_ERROR) {
-          throw LOG.flushDbOperationException(allOperations, failedOperation, failedOperation.getFailure());
+          // Top level persistence exception
+          throw failedOperation.getFailure();
+
         } else {
           // This branch should never be reached and the exception thus indicates a bug
           throw new ProcessEngineException("Entity session returned a failed operation not "

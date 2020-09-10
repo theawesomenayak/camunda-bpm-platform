@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.impl.persistence.entity.JobEntity;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -31,6 +32,7 @@ import org.junit.Test;
  */
 public class ProcessEngineInitializationTest {
 
+  @Ignore("use logging rule")
   @Test
   public void testNoTables() {
     try {
