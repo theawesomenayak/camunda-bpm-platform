@@ -32,11 +32,14 @@ public class Internals {
 
   protected Map<String, Metric> metrics;
 
-  public Internals(Database database, ApplicationServer server) {
+  protected Jdk jdk;
+
+  public Internals(Database database, ApplicationServer server, Jdk jdk) {
     super();
     this.database = database;
     this.applicationServer = server;
     this.commands = new HashMap<>();
+    this.jdk = jdk;
   }
 
   public Database getDatabase() {
@@ -69,6 +72,14 @@ public class Internals {
 
   public void setMetrics(Map<String, Metric> metrics) {
     this.metrics = metrics;
+  }
+
+  public Jdk getJdk() {
+    return jdk;
+  }
+
+  public void setJdk(Jdk jdk) {
+    this.jdk = jdk;
   }
 
 }
