@@ -39,6 +39,9 @@ import org.camunda.bpm.engine.impl.cmd.IsTelemetryEnabledCmd;
 import org.camunda.bpm.engine.impl.history.HistoryLevel;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.interceptor.CommandExecutor;
+import org.camunda.bpm.engine.impl.metrics.Meter;
+import org.camunda.bpm.engine.impl.metrics.MetricsRegistry;
+import org.camunda.bpm.engine.impl.persistence.entity.MeterLogEntity;
 import org.camunda.bpm.engine.impl.telemetry.CommandCounter;
 import org.camunda.bpm.engine.impl.telemetry.TelemetryLogger;
 import org.camunda.bpm.engine.impl.telemetry.TelemetryRegistry;
@@ -64,19 +67,22 @@ public class TelemetrySendingTask extends TimerTask {
   protected Connector<? extends ConnectorRequest<?>> httpConnector;
   protected int telemetryRequestRetries;
   protected TelemetryRegistry telemetryRegistry;
+  protected MetricsRegistry metricsRegistry;
 
   public TelemetrySendingTask(CommandExecutor commandExecutor,
                               String telemetryEndpoint,
                               int telemetryRequestRetries,
                               Data data,
                               Connector<? extends ConnectorRequest<?>> httpConnector,
-                              TelemetryRegistry telemetryRegistry) {
+                              TelemetryRegistry telemetryRegistry,
+                              MetricsRegistry metricsRegistry) {
     this.commandExecutor = commandExecutor;
     this.telemetryEndpoint = telemetryEndpoint;
     this.telemetryRequestRetries = telemetryRequestRetries;
     this.staticData = data;
     this.httpConnector = httpConnector;
     this.telemetryRegistry = telemetryRegistry;
+    this.metricsRegistry = metricsRegistry;
   }
 
   @Override
@@ -106,9 +112,6 @@ public class TelemetrySendingTask extends TimerTask {
           restoreDynamicData(dynamicData);
           throw e;
         }
-
-        // reset report time
-        telemetryRegistry.setStartReportTime(ClockUtil.getCurrentTime());
 
         requestSuccessful = true;
       } catch (Exception e) {
@@ -184,6 +187,17 @@ public class TelemetrySendingTask extends TimerTask {
     for (Map.Entry<String, Command> entry : commands.entrySet()) {
       telemetryRegistry.markOccurrence(entry.getKey(), entry.getValue().getCount());
     }
+
+    Map<String, Metric> metrics = internals.getMetrics();
+
+    Metric rootInstances = metrics.get(ROOT_PROCESS_INSTANCES);
+    metricsRegistry.markTelemetryOccurrence(Metrics.ROOT_PROCESS_INSTANCE_START, rootInstances.getCount());
+
+    Metric decisionInstances = metrics.get(EXECUTED_DECISION_INSTANCES);
+    metricsRegistry.markTelemetryOccurrence(Metrics.EXECUTED_DECISION_INSTANCES, decisionInstances.getCount());
+
+    Metric flowNodeInstances = metrics.get(FLOW_NODE_INSTANCES);
+    metricsRegistry.markTelemetryOccurrence(Metrics.ACTIVTY_INSTANCE_START, flowNodeInstances.getCount());
   }
 
   protected Internals resolveDynamicData() {
@@ -218,28 +232,27 @@ public class TelemetrySendingTask extends TimerTask {
 
   protected Map<String, Metric> calculateMetrics() {
 
-    Date startReportTime = telemetryRegistry.getStartReportTime();
     Date currentTime = ClockUtil.getCurrentTime();
 
-    return commandExecutor.execute(c -> {
-      ManagementService managementService = c.getProcessEngineConfiguration().getManagementService();
+    Map<String, Metric> metrics = new HashMap<>();
 
-      Map<String, Metric> metrics = new HashMap<>();
+    Map<String, Meter> telemetryMeters = metricsRegistry.getTelemetryMeters();
 
-      long sum = calculateMetricCount(managementService, startReportTime, currentTime, Metrics.ROOT_PROCESS_INSTANCE_START);
-      metrics.put(ROOT_PROCESS_INSTANCES, new Metric(sum));
+    long rootInstances = telemetryMeters.get(Metrics.ROOT_PROCESS_INSTANCE_START).getAndClear();
+    metrics.put(ROOT_PROCESS_INSTANCES, new Metric(rootInstances));
 
-      sum = calculateMetricCount(managementService, startReportTime, currentTime, Metrics.EXECUTED_DECISION_INSTANCES);
-      metrics.put(EXECUTED_DECISION_INSTANCES, new Metric(sum));
+    long decisionInstances = telemetryMeters.get(Metrics.EXECUTED_DECISION_INSTANCES).getAndClear();
+    metrics.put(EXECUTED_DECISION_INSTANCES, new Metric(decisionInstances));
 
-      sum = calculateMetricCount(managementService, startReportTime, currentTime, Metrics.ACTIVTY_INSTANCE_START);
-      metrics.put(FLOW_NODE_INSTANCES, new Metric(sum));
+    long flowNodeInstances = telemetryMeters.get(Metrics.ACTIVTY_INSTANCE_START).getAndClear();
+    metrics.put(FLOW_NODE_INSTANCES, new Metric(flowNodeInstances));
 
-      sum = calculateUniqueUserCount(c, c.getProcessEngineConfiguration().getHistoryLevel(), startReportTime, currentTime);
-      metrics.put(UNIQUE_TASK_WORKERS, new Metric(sum));
-
-      return metrics;
+    Long taskWorkers = commandExecutor.execute(c -> {
+      return calculateUniqueUserCount(c, c.getProcessEngineConfiguration().getHistoryLevel(), currentTime);
     });
+    metrics.put(UNIQUE_TASK_WORKERS, new Metric(taskWorkers));
+
+    return metrics;
   }
 
   protected long calculateMetricCount(ManagementService managementService,
@@ -255,7 +268,6 @@ public class TelemetrySendingTask extends TimerTask {
 
   protected long calculateUniqueUserCount(CommandContext commandContext,
                                           HistoryLevel historyLevel,
-                                          Date startReportTime,
                                           Date currentTime) {
     if (historyLevel.equals(HistoryLevel.HISTORY_LEVEL_NONE)) {
       return 0;

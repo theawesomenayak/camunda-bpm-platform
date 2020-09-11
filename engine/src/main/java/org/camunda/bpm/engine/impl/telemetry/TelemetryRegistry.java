@@ -16,12 +16,10 @@
  */
 package org.camunda.bpm.engine.impl.telemetry;
 
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
 import org.camunda.bpm.engine.impl.telemetry.dto.ApplicationServer;
-import org.camunda.bpm.engine.impl.util.ClockUtil;
 
 public class TelemetryRegistry {
 
@@ -32,7 +30,6 @@ public class TelemetryRegistry {
 
   protected Map<String, CommandCounter> commands = new HashMap<>();
   protected ApplicationServer applicationServer;
-  protected Date startReportTime = ClockUtil.getCurrentTime();
 
   public synchronized ApplicationServer getApplicationServer() {
     return applicationServer;
@@ -48,14 +45,6 @@ public class TelemetryRegistry {
 
   public Map<String, CommandCounter> getCommands() {
     return commands;
-  }
-
-  public Date getStartReportTime() {
-    return startReportTime;
-  }
-
-  public void setStartReportTime(Date lastReport) {
-    this.startReportTime = lastReport;
   }
 
   public void markOccurrence(String name) {

@@ -152,7 +152,7 @@ public class TelemetryReporterTest {
   }
 
   protected void clearMetrics() {
-    Collection<Meter> meters = configuration.getMetricsRegistry().getMeters().values();
+    Collection<Meter> meters = configuration.getMetricsRegistry().getDbMeters().values();
     for (Meter meter : meters) {
       meter.getAndClear();
     }
@@ -176,7 +176,8 @@ public class TelemetryReporterTest {
                                                                 1000,
                                                                 data,
                                                                 configuration.getTelemetryHttpConnector(),
-                                                                configuration.getTelemetryRegistry());
+                                                                configuration.getTelemetryRegistry(),
+                                                                configuration.getMetricsRegistry());
 
     // when
     telemetryReporter.reportNow();
@@ -261,20 +262,6 @@ public class TelemetryReporterTest {
 
   @Test
   @Deployment(resources = { "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml" })
-  public void shouldSetStartReportTimeWhenTelemetryEnabled() {
-    // given
-    Date currentTime = ClockUtil.getCurrentTime();
-
-    // when
-    managementService.toggleTelemetry(true);
-
-    // then
-    assertThat(configuration.getTelemetryRegistry().getStartReportTime()).isInSameSecondWindowAs(currentTime);
-
-  }
-
-  @Test
-  @Deployment(resources = { "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml" })
   public void shouldSendTelemetryWithRooProcessInstanceMetrics() {
     // given
     managementService.toggleTelemetry(true);
@@ -309,6 +296,35 @@ public class TelemetryReporterTest {
 
   @Test
   @Deployment(resources = { "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml" })
+  public void shouldNotSendMetricsTwice() {
+    // given
+    managementService.toggleTelemetry(true);
+
+    for (int i = 0; i < 3; i++) {
+      runtimeService.startProcessInstanceByKey("oneTaskProcess");
+    }
+    configuration.getDbMetricsReporter().reportNow();
+
+    Data expectedData = adjustDataWithMetricCounts(configuration.getTelemetryData(), 0, 0, 0, 0);
+
+    String requestBody = new Gson().toJson(expectedData);
+    stubFor(post(urlEqualTo(TELEMETRY_ENDPOINT_PATH))
+        .willReturn(aResponse()
+            .withStatus(HttpURLConnection.HTTP_ACCEPTED)));
+
+    configuration.getTelemetryReporter().reportNow();
+
+    // when sending telemetry again
+    configuration.getTelemetryReporter().reportNow();
+
+    // then
+    verify(postRequestedFor(urlEqualTo(TELEMETRY_ENDPOINT_PATH))
+        .withRequestBody(equalToJson(requestBody, JSONCompareMode.LENIENT))
+        .withHeader("Content-Type",  equalTo("application/json")));
+  }
+
+  @Test
+  @Deployment(resources = { "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml" })
   public void shouldSendTelemetryOnceWithRooProcessInstanceMetrics() {
     // given
     managementService.toggleTelemetry(false);
@@ -330,7 +346,7 @@ public class TelemetryReporterTest {
 
     ClockUtil.setCurrentTime(addHour(ClockUtil.getCurrentTime()));
 
-    Data expectedData = adjustDataWithMetricCounts(configuration.getTelemetryData(), 3, 0, 6, 0);
+    Data expectedData = adjustDataWithMetricCounts(configuration.getTelemetryData(), 6, 0, 12, 0);
 
     String requestBody = new Gson().toJson(expectedData);
     stubFor(post(urlEqualTo(TELEMETRY_ENDPOINT_PATH))
@@ -345,8 +361,6 @@ public class TelemetryReporterTest {
     verify(postRequestedFor(urlEqualTo(TELEMETRY_ENDPOINT_PATH))
         .withRequestBody(equalToJson(requestBody, JSONCompareMode.LENIENT))
         .withHeader("Content-Type",  equalTo("application/json")));
-    Map<String, Metric> metrics = configuration.getTelemetryData().getProduct().getInternals().getMetrics();
-    assertThat(metrics.get(ROOT_PROCESS_INSTANCES).getCount()).isEqualTo(3);
   }
 
   @Test
@@ -531,7 +545,8 @@ public class TelemetryReporterTest {
                                                                 1000,
                                                                 data,
                                                                 null,
-                                                                configuration.getTelemetryRegistry());
+                                                                configuration.getTelemetryRegistry(),
+                                                                configuration.getMetricsRegistry());
 
     // when
     telemetryReporter.reportNow();

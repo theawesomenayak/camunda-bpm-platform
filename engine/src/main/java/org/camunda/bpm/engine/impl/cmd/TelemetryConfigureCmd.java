@@ -63,8 +63,6 @@ public class TelemetryConfigureCmd implements Command<Void> {
 
     if (currentValue != null && !currentValue.booleanValue() && telemetryEnabled) {
       telemetryReporter.reschedule();
-      // set start report time
-      processEngineConfiguration.getTelemetryRegistry().setStartReportTime(ClockUtil.getCurrentTime());
     }
   }
 
